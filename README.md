@@ -1,93 +1,66 @@
-# GenZify (a GenZ-LM) 🔥
+# GenZify 🔥 — Qwen2.5-1.5B Fine-tuned on GenZ Slang
 
-> A fine-tuned Mistral-7B model that responds to any instruction in Gen-Z slang.
+A fine-tuned version of [Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) that responds to any question or instruction in **GenZ slang, emojis, and internet culture**.
 
----
-
-## What is this?
-
-GenZify is a QLoRA fine-tuned version of `mistralai/Mistral-7B-Instruct-v0.2`, trained on a custom dataset of 240 instruction-output pairs where every response is written in authentic Gen-Z slang — think *"no cap"*, *"fr fr"*, *"it's giving"*, and *"lowkey slaps"*.
-
-Give it any instruction and it'll answer like your terminally online younger sibling. 💀
+> no formal language, just pure vibes fr fr no cap 😂🔥
 
 ---
 
-## Examples
+## Demo
 
-**Input:**
-```
-Instruction: Generate a sentence with a complex verbal structure using a given vocabulary.
-Words: devious, antagonistic, ferocity
-```
-**Output:**
-```
-The devious politician went full antagonistic mode, attacking his opponent 
-with straight ferocity that left the whole audience shook 😱
-```
-
----
-
-**Input:**
-```
-Instruction: Explain what gravity is.
-```
-**Output:**
-```
-ok so gravity is basically the universe's way of saying 
-"you're not leaving bestie" — it's the force that keeps 
-everything from just yeeting off into space fr fr 🌍
-```
+| Prompt | Response |
+|---|---|
+| What is photosynthesis? | Plants turning light CO2 water glucose sugar – oxygen free 🌱 food maker or nature's main character 💚😂 |
+| Explain black holes | space vacuum cleaners fr 🕳️ gravity so unhinged not even light escapes – einstein said bet 💀😂 |
+| Tips to stay productive | 1. no phone first hr 📵 2. pomodoro grind 🍅 3. sleep or brain said lag 😴😂 |
 
 ---
 
 ## Model Details
 
-| Property | Value |
+| | |
 |---|---|
-| Base Model | `mistralai/Mistral-7B-Instruct-v0.2` |
-| Fine-tuning Method | QLoRA (4-bit quantization + LoRA) |
-| LoRA Rank | 16 |
-| LoRA Alpha | 32 |
-| Training Examples | 240 |
-| Epochs | 3 |
-| Framework | HuggingFace Transformers + TRL |
+| **Base Model** | Qwen/Qwen2.5-1.5B-Instruct |
+| **Fine-tuning Method** | QLoRA (4-bit) |
+| **LoRA Rank** | 16 |
+| **LoRA Alpha** | 32 |
+| **Epochs** | 3 |
+| **Training Loss** | 0.877 |
+| **Validation Loss** | 1.282 |
+| **Training Time** | ~29 mins |
+| **Hardware** | Kaggle T4 x2 |
+| **Dataset** | Custom GenZ response dataset (10 batches) |
 
 ---
 
 ## Project Structure
 
 ```
-genZify/
-├── data/
-│   └── data.jsonl               # Training dataset (240 examples)
-├── genz-lora-adapter/           # Trained LoRA adapter weights
-│   ├── adapter_model.safetensors
-│   ├── adapter_config.json
-│   └── tokenizer files
-├── genz-merged-model/           # Full merged model (adapter + base)
-│   ├── config.json
-│   ├── model-00001-of-00004.safetensors
-│   └── ...
+GenZify/
+├── app.py                  # Gradio demo app
+├── requirements.txt        # Dependencies
+├── finetune_genz.py        # Training script
+├── data_prep.py            # Dataset preparation
 └── README.md
 ```
 
 ---
 
-## Quickstart
+## Quick Start
 
 ### Installation
-
 ```bash
-pip install transformers peft bitsandbytes accelerate torch
+git clone https://github.com/somendrew/GenZify
+cd GenZify
+pip install -r requirements.txt
 ```
 
-### Option A: Inference with merged model
-
+### Run Inference
 ```python
-import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+import torch
 
-model_path = "./genz-merged-model"
+MODEL_ID = "somendrew/genz-qwen-2.5-1.5B"
 
 bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
@@ -96,155 +69,123 @@ bnb_config = BitsAndBytesConfig(
     bnb_4bit_use_double_quant=True,
 )
 
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
 model = AutoModelForCausalLM.from_pretrained(
-    model_path,
+    MODEL_ID,
     quantization_config=bnb_config,
     device_map="auto",
 )
-tokenizer = AutoTokenizer.from_pretrained(model_path)
 model.eval()
-```
+model.config.use_cache = True
 
-### Option B: Inference with adapter only (saves disk space)
+SYSTEM_PROMPT = "You are a GenZ assistant. Reply using GenZ slang and emojis. No formal language, just vibes fr 🔥"
 
-```python
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from peft import PeftModel
-
-bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16,
-    bnb_4bit_use_double_quant=True,
-)
-
-base_model = AutoModelForCausalLM.from_pretrained(
-    "mistralai/Mistral-7B-Instruct-v0.2",
-    quantization_config=bnb_config,
-    device_map="auto",
-)
-tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.2")
-model = PeftModel.from_pretrained(base_model, "./genz-lora-adapter")
-model.eval()
-```
-
-### Generate a response
-
-```python
-def generate_genz(instruction, input_text=""):
-    user_content = f"{instruction}\n\n{input_text}" if input_text.strip() else instruction
-
-    messages = [{"role": "user", "content": user_content}]
-    prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+def chat(prompt):
+    text = (
+        f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"
+        f"<|im_start|>user\n{prompt}<|im_end|>\n"
+        f"<|im_start|>assistant\n"
     )
-    inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
-
+    inputs = tokenizer(text, return_tensors="pt").to(model.device)
     with torch.no_grad():
-        outputs = model.generate(
+        output = model.generate(
             **inputs,
             max_new_tokens=150,
             temperature=0.8,
             top_p=0.9,
             do_sample=True,
-            repetition_penalty=1.1,
+            pad_token_id=tokenizer.eos_token_id,
         )
+    return tokenizer.decode(output[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
 
-    response = outputs[0][inputs["input_ids"].shape[1]:]
-    return tokenizer.decode(response, skip_special_tokens=True)
+print(chat("What is gravity?"))
+```
 
-# Try it!
-print(generate_genz("Explain quantum physics."))
-print(generate_genz("Write a haiku about summer."))
-print(generate_genz("Give me 3 productivity tips."))
+### Run Gradio Demo Locally
+```bash
+python app.py
 ```
 
 ---
 
 ## Training
 
-The model was fine-tuned using QLoRA on a custom dataset of 240 instruction-output pairs.
-Each output is written in Gen-Z slang with emojis, abbreviations, and internet-native phrasing.
+The model was fine-tuned using **QLoRA** on Kaggle (T4 x2) using the `trl` library's `SFTTrainer`.
 
-### Dataset format
-
+### Dataset Format
 ```json
 {
-  "instruction": "Rearrange the following sentence to make it more interesting.",
-  "input": "She left the party early",
-  "output": "She yeeted outta that party way too early fr 💀"
+    "instruction": "What is gravity?",
+    "input": "",
+    "output": "gravity = earth being clingy af 🌍 pulls everything down no escape – newton got bonked by apple 🍎💀😂"
 }
 ```
 
-### Reproduce training
-
+### LoRA Config
 ```python
-# Format dataset
-def format_as_messages(example):
-    user_content = f"{example['instruction']}\n\n{example['input']}" \
-                   if example["input"].strip() else example["instruction"]
-    return {
-        "messages": [
-            {"role": "user",      "content": user_content},
-            {"role": "assistant", "content": example["output"]}
-        ]
-    }
+LoraConfig(
+    r=16,
+    lora_alpha=32,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                    "gate_proj", "up_proj", "down_proj"],
+    lora_dropout=0.05,
+    task_type="CAUSAL_LM",
+)
+```
 
-# Train
-from trl import SFTTrainer, SFTConfig
-
-training_args = SFTConfig(
-    output_dir="./genz-slang-model",
+### Training Args
+```python
+SFTConfig(
     num_train_epochs=3,
     per_device_train_batch_size=4,
-    gradient_accumulation_steps=4,
-    gradient_checkpointing=True,
-    optim="paged_adamw_32bit",
+    gradient_accumulation_steps=2,
     learning_rate=2e-4,
     bf16=True,
-    warmup_steps=10,
-    lr_scheduler_type="cosine",
-    eval_strategy="no",
-    max_length=512,
-    packing=False,
+    optim="paged_adamw_8bit",
+    gradient_checkpointing=True,
 )
 ```
 
 ---
 
-## Hardware Requirements
+## Requirements
 
-| Setup | Minimum VRAM | Notes |
-|---|---|---|
-| 4-bit inference | 6GB | Recommended for most GPUs |
-| Full bfloat16 inference | 16GB | Best quality |
-| Training (QLoRA) | 15GB | Used T4 GPU on Kaggle |
+```
+transformers
+gradio
+torch
+accelerate
+bitsandbytes
+peft
+trl
+datasets
+```
 
 ---
 
-## Limitations
+## HuggingFace Links
 
-- Trained on only 240 examples — may be inconsistent on rare topics
-- Slang style can vary — some outputs more Gen-Z than others
-- Not suitable for formal or professional use cases (that's kind of the point tho 💀)
-- Based on Mistral-7B-Instruct — inherits its general limitations
+| Resource | Link |
+|---|---|
+| 🤗 Merged Model | [somendrew/genz-qwen-2.5-1.5B](https://huggingface.co/somendrew/genz-qwen-2.5-1.5B) |
+| 🔌 LoRA Adapter | [somendrew/genz-qwen-2.5-1.5B-adapter](https://huggingface.co/somendrew/genz-qwen-2.5-1.5B-adapter) |
+| 🚀 Live Demo | [HuggingFace Space](https://huggingface.co/spaces/somendrew/GenZify) |
 
 ---
 
 ## License
 
-Apache 2.0 — same as the base Mistral-7B model.
+This project is licensed under the **Apache 2.0 License** — same as the base model.
 
 ---
 
 ## Acknowledgements
 
-- [Mistral AI](https://mistral.ai) for the base model
-- [HuggingFace TRL](https://github.com/huggingface/trl) for SFTTrainer
-- [Tim Dettmers](https://github.com/TimDettmers/bitsandbytes) for bitsandbytes
-- Everyone on Gen-Z Twitter/TikTok for the training data vibes ✨
+- [Qwen2.5](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) by Alibaba Cloud
+- [TRL](https://github.com/huggingface/trl) by HuggingFace
+- [PEFT](https://github.com/huggingface/peft) by HuggingFace
+- Trained on [Kaggle](https://www.kaggle.com) free GPU tier
 
 ---
 
-*Built with 🔥 and zero chill.*
+<p align="center">BUILT WITH 🔥 AND ZERO CHILL</p>
